@@ -63,6 +63,12 @@ client:
     persist:
         - name: insights.specs.Specs
           enabled: true
+
+    run_strategy:
+        name: parallel
+        args:
+            max_workers: null
+
 plugins:
     # disable everything by default
     # defaults to false if not specified.
@@ -210,6 +216,7 @@ def collect(manifest=default_manifest, tmp_path=None, compress=False):
     manifest = load_manifest(manifest)
     client = manifest.get("client", {})
     plugins = manifest.get("plugins", {})
+    run_strategy = client.get("run_strategy", {"name": "parallel"})
 
     apply_default_enabled(plugins.get("default_component_enabled", False))
     load_packages(plugins.get("packages", []))
@@ -231,7 +238,11 @@ def collect(manifest=default_manifest, tmp_path=None, compress=False):
 
     h = Hydration(output_path)
     broker.add_observer(h.make_persister(to_persist))
-    list(dr.run_incremental(broker=broker))
+    if run_strategy.get("name") == "parallel":
+        kwargs = run_strategy.get("args", {})
+        dr.run_parallel(broker=broker, **kwargs)
+    else:
+        list(dr.run_incremental(broker=broker))
 
     if compress:
         return create_archive(output_path)
@@ -245,6 +256,7 @@ def main():
     p.add_argument("-q", "--quiet", help="Error output only.", action="store_true")
     p.add_argument("-v", "--verbose", help="Verbose output.", action="store_true")
     p.add_argument("-d", "--debug", help="Debug output.", action="store_true")
+    p.add_argument("-c", "--compress", help="Compress", action="store_true")
     args = p.parse_args()
 
     level = logging.WARNING
@@ -264,7 +276,7 @@ def main():
         manifest = default_manifest
 
     out_path = args.out_path or tempfile.gettempdir()
-    archive = collect(manifest, out_path, compress=True)
+    archive = collect(manifest, out_path, compress=args.compress)
     print(archive)
 
 
